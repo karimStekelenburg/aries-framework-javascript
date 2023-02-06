@@ -4,7 +4,7 @@ import { AgentContext, injectable } from '@aries-framework/core'
 
 import { OpenId4VcClientService } from './OpenId4VcClientService'
 
-interface PreAuthorizedOptions {
+export interface PreAuthorizedOptions {
   issuerUri: string
   kid: string
   checkRevocationState?: boolean // default = true
