@@ -915,7 +915,7 @@
   dependencies:
     fast-text-encoding "^1.0.3"
 
-"@hyperledger/indy-vdr-nodejs@^0.1.0-dev.6":
+"@hyperledger/indy-vdr-nodejs@^0.1.0-dev.10":
   version "0.1.0-dev.11"
   resolved "https://registry.yarnpkg.com/@hyperledger/indy-vdr-nodejs/-/indy-vdr-nodejs-0.1.0-dev.11.tgz#376f16651aa03f0d9feb98880210e41c0e8dcb9a"
   integrity sha512-gAz3vVB+r/cVR04nvMi2goqTfrn/yv0ihANaDloK/LKbzHXg4LHwR6Stu8aBoymwq/5ld1HUdVK9p8v/q797hg==
@@ -927,7 +927,7 @@
     ref-napi "^3.0.3"
     ref-struct-di "^1.1.1"
 
-"@hyperledger/indy-vdr-shared@0.1.0-dev.11", "@hyperledger/indy-vdr-shared@^0.1.0-dev.6":
+"@hyperledger/indy-vdr-shared@0.1.0-dev.11", "@hyperledger/indy-vdr-shared@^0.1.0-dev.10":
   version "0.1.0-dev.11"
   resolved "https://registry.yarnpkg.com/@hyperledger/indy-vdr-shared/-/indy-vdr-shared-0.1.0-dev.11.tgz#f0afc11dd63971914b74e7bd0b9222e4122cf3d5"
   integrity sha512-FNJYrsWENZDe8jwOTAr9rqEHvTJg/8wPAwA8OqYgU6Ara1m9yWhoGveysrP5dxFAAZk2G5cLvB+QeshEw7d5bQ==
