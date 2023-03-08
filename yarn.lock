@@ -895,7 +895,7 @@
   resolved "https://registry.yarnpkg.com/@hyperledger/anoncreds-shared/-/anoncreds-shared-0.1.0-dev.10.tgz#9d67f64e98ff41971644c95b03dabafd741df4df"
   integrity sha512-POvcwQrUcPrwoZehQa38pN1dnjyeUlrQ6VlksbBRS8SUHJuyixZsD+d3XoumqaNfl9Z1DCjfuOgEiPlec01gXQ==
 
-"@hyperledger/aries-askar-nodejs@^0.1.0-dev.3":
+"@hyperledger/aries-askar-nodejs@^0.1.0-dev.4":
   version "0.1.0-dev.5"
   resolved "https://registry.yarnpkg.com/@hyperledger/aries-askar-nodejs/-/aries-askar-nodejs-0.1.0-dev.5.tgz#602db32f49dd1f9e7f83d378a9813d2bde5886f8"
   integrity sha512-38lXtmnhhca+s14V3zTefAyZGIg6nRpKi4Emnr1q5hQXmn1WZn7/ybYJbcI/VHoAPNLA+DydSI99U5KuPkrC1w==
@@ -908,7 +908,7 @@
     ref-napi "^3.0.3"
     ref-struct-di "^1.1.1"
 
-"@hyperledger/aries-askar-shared@0.1.0-dev.5", "@hyperledger/aries-askar-shared@^0.1.0-dev.3":
+"@hyperledger/aries-askar-shared@0.1.0-dev.5", "@hyperledger/aries-askar-shared@^0.1.0-dev.4":
   version "0.1.0-dev.5"
   resolved "https://registry.yarnpkg.com/@hyperledger/aries-askar-shared/-/aries-askar-shared-0.1.0-dev.5.tgz#06ae815b873693b7b483004d027059d50f24fb60"
   integrity sha512-nufXqMslytelijC0uXBTuaj9OHjHo5mJe0hABKfYJqe9p1RYmmKlnqi+B/mjWrr2R8yG8NLrNnHbwPcBArLrPA==
