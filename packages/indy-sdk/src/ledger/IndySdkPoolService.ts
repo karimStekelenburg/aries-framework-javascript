@@ -1,22 +1,32 @@
-import type { AcceptanceMechanisms, AuthorAgreement, IndySdkPoolConfig } from './IndySdkPool'
-import type { AgentContext } from '@aries-framework/core'
+import type { AcceptanceMechanisms, AuthorAgreement } from './IndySdkPool'
+import type { IndySdk } from '../types'
+import type { AgentContext, Key } from '@aries-framework/core'
 import type { GetNymResponse, LedgerReadReplyResponse, LedgerRequest, LedgerWriteReplyResponse } from 'indy-sdk'
 
-import { CacheModuleConfig, InjectionSymbols, Logger, injectable, inject, FileSystem } from '@aries-framework/core'
+import {
+  TypedArrayEncoder,
+  CacheModuleConfig,
+  InjectionSymbols,
+  Logger,
+  injectable,
+  inject,
+  FileSystem,
+} from '@aries-framework/core'
 import { Subject } from 'rxjs'
 
+import { IndySdkModuleConfig } from '../IndySdkModuleConfig'
 import { IndySdkError, isIndyError } from '../error'
-import { IndySdk } from '../types'
 import { assertIndySdkWallet } from '../utils/assertIndySdkWallet'
-import { isSelfCertifiedDid } from '../utils/did'
+import { DID_INDY_REGEX, isLegacySelfCertifiedDid } from '../utils/did'
 import { allSettled, onlyFulfilled, onlyRejected } from '../utils/promises'
 
 import { IndySdkPool } from './IndySdkPool'
 import { IndySdkPoolError, IndySdkPoolNotConfiguredError, IndySdkPoolNotFoundError } from './error'
+import { serializeRequestForSignature } from './serializeRequestForSignature'
 
 export interface CachedDidResponse {
   nymResponse: GetNymResponse
-  poolId: string
+  indyNamespace: string
 }
 
 @injectable()
@@ -26,48 +36,59 @@ export class IndySdkPoolService {
   private indySdk: IndySdk
   private stop$: Subject<boolean>
   private fileSystem: FileSystem
+  private indySdkModuleConfig: IndySdkModuleConfig
 
   public constructor(
-    indySdk: IndySdk,
     @inject(InjectionSymbols.Logger) logger: Logger,
     @inject(InjectionSymbols.Stop$) stop$: Subject<boolean>,
-    @inject(InjectionSymbols.FileSystem) fileSystem: FileSystem
+    @inject(InjectionSymbols.FileSystem) fileSystem: FileSystem,
+    indySdkModuleConfig: IndySdkModuleConfig
   ) {
     this.logger = logger
-    this.indySdk = indySdk
+    this.indySdk = indySdkModuleConfig.indySdk
     this.fileSystem = fileSystem
     this.stop$ = stop$
-  }
+    this.indySdkModuleConfig = indySdkModuleConfig
 
-  public setPools(poolConfigs: IndySdkPoolConfig[]) {
-    this.pools = poolConfigs.map(
-      (poolConfig) => new IndySdkPool(poolConfig, this.indySdk, this.logger, this.stop$, this.fileSystem)
+    this.pools = this.indySdkModuleConfig.networks.map(
+      (network) => new IndySdkPool(network, this.indySdk, this.logger, this.stop$, this.fileSystem)
     )
   }
 
   /**
-   * Create connections to all ledger pools
-   */
-  public async connectToPools() {
-    const handleArray: number[] = []
-    // Sequentially connect to pools so we don't use up too many resources connecting in parallel
-    for (const pool of this.pools) {
-      this.logger.debug(`Connecting to pool: ${pool.id}`)
-      const poolHandle = await pool.connect()
-      this.logger.debug(`Finished connection to pool: ${pool.id}`)
-      handleArray.push(poolHandle)
-    }
-    return handleArray
-  }
-
-  /**
-   * Get the most appropriate pool for the given did. The algorithm is based on the approach as described in this document:
+   * Get the most appropriate pool for the given did.
+   * If the did is a qualified indy did, the pool will be determined based on the namespace.
+   * If it is a legacy unqualified indy did, the pool will be determined based on the algorithm as described in this document:
    * https://docs.google.com/document/d/109C_eMsuZnTnYe2OAd02jAts1vC4axwEKIq7_4dnNVA/edit
+   *
+   * This method will optionally return a nym response when the did has been resolved to determine the ledger
+   * either now or in the past. The nymResponse can be used to prevent multiple ledger quries fetching the same
+   * did
    */
   public async getPoolForDid(
     agentContext: AgentContext,
     did: string
-  ): Promise<{ pool: IndySdkPool; did: GetNymResponse }> {
+  ): Promise<{ pool: IndySdkPool; nymResponse?: GetNymResponse }> {
+    // Check if the did starts with did:indy
+    const match = did.match(DID_INDY_REGEX)
+
+    if (match) {
+      const [, namespace] = match
+
+      const pool = this.getPoolForNamespace(namespace)
+
+      if (pool) return { pool }
+
+      throw new IndySdkPoolError(`Pool for indy namespace '${namespace}' not found`)
+    } else {
+      return await this.getPoolForLegacyDid(agentContext, did)
+    }
+  }
+
+  private async getPoolForLegacyDid(
+    agentContext: AgentContext,
+    did: string
+  ): Promise<{ pool: IndySdkPool; nymResponse: GetNymResponse }> {
     const pools = this.pools
 
     if (pools.length === 0) {
@@ -78,12 +99,12 @@ export class IndySdkPoolService {
 
     const cache = agentContext.dependencyManager.resolve(CacheModuleConfig).cache
     const cachedNymResponse = await cache.get<CachedDidResponse>(agentContext, `IndySdkPoolService:${did}`)
-    const pool = this.pools.find((pool) => pool.id === cachedNymResponse?.poolId)
+    const pool = this.pools.find((pool) => pool.didIndyNamespace === cachedNymResponse?.indyNamespace)
 
     // If we have the nym response with associated pool in the cache, we'll use that
     if (cachedNymResponse && pool) {
-      this.logger.trace(`Found ledger id '${pool.id}' for did '${did}' in cache`)
-      return { did: cachedNymResponse.nymResponse, pool }
+      this.logger.trace(`Found ledger '${pool.didIndyNamespace}' for did '${did}' in cache`)
+      return { nymResponse: cachedNymResponse.nymResponse, pool }
     }
 
     const { successful, rejected } = await this.getSettledDidResponsesFromPools(did, pools)
@@ -99,7 +120,7 @@ export class IndySdkPoolService {
 
       // one or more of the ledgers returned an unknown error
       throw new IndySdkPoolError(
-        `Unknown error retrieving did '${did}' from '${rejectedOtherThanNotFound.length}' of '${pools.length}' ledgers`,
+        `Unknown error retrieving did '${did}' from '${rejectedOtherThanNotFound.length}' of '${pools.length}' ledgers. ${rejectedOtherThanNotFound[0].reason}`,
         { cause: rejectedOtherThanNotFound[0].reason }
       )
     }
@@ -108,7 +129,7 @@ export class IndySdkPoolService {
     // We take the first self certifying DID as we take the order in the
     // indyLedgers config as the order of preference of ledgers
     let value = successful.find((response) =>
-      isSelfCertifiedDid(response.value.did.did, response.value.did.verkey)
+      isLegacySelfCertifiedDid(response.value.did.did, response.value.did.verkey)
     )?.value
 
     if (!value) {
@@ -126,9 +147,10 @@ export class IndySdkPoolService {
 
     await cache.set(agentContext, `IndySdkPoolService:${did}`, {
       nymResponse: value.did,
-      poolId: value.pool.id,
-    })
-    return { pool: value.pool, did: value.did }
+      indyNamespace: value.pool.didIndyNamespace,
+    } satisfies CachedDidResponse)
+
+    return { pool: value.pool, nymResponse: value.did }
   }
 
   private async getSettledDidResponsesFromPools(did: string, pools: IndySdkPool[]) {
@@ -164,7 +186,7 @@ export class IndySdkPoolService {
     const pool = this.pools.find((pool) => pool.didIndyNamespace === indyNamespace)
 
     if (!pool) {
-      throw new IndySdkPoolNotFoundError(`No ledgers found for IndyNamespace '${indyNamespace}'.`)
+      throw new IndySdkPoolNotFoundError(`No ledgers found for indy namespace '${indyNamespace}'.`)
     }
 
     return pool
@@ -174,11 +196,11 @@ export class IndySdkPoolService {
     agentContext: AgentContext,
     pool: IndySdkPool,
     request: LedgerRequest,
-    signDid: string
+    signingKey: Key
   ): Promise<LedgerWriteReplyResponse> {
     try {
       const requestWithTaa = await this.appendTaa(pool, request)
-      const signedRequestWithTaa = await this.signRequest(agentContext, signDid, requestWithTaa)
+      const signedRequestWithTaa = await this.signRequest(agentContext, signingKey, requestWithTaa)
 
       const response = await pool.submitWriteRequest(signedRequestWithTaa)
 
@@ -198,11 +220,18 @@ export class IndySdkPoolService {
     }
   }
 
-  private async signRequest(agentContext: AgentContext, did: string, request: LedgerRequest): Promise<LedgerRequest> {
+  private async signRequest(agentContext: AgentContext, key: Key, request: LedgerRequest): Promise<LedgerRequest> {
     assertIndySdkWallet(agentContext.wallet)
 
     try {
-      return this.indySdk.signRequest(agentContext.wallet.handle, did, request)
+      const signedPayload = await this.indySdk.cryptoSign(
+        agentContext.wallet.handle,
+        key.publicKeyBase58,
+        TypedArrayEncoder.fromString(serializeRequestForSignature(request))
+      )
+
+      const signedRequest = { ...request, signature: TypedArrayEncoder.toBase58(signedPayload) }
+      return signedRequest
     } catch (error) {
       throw isIndyError(error) ? new IndySdkError(error) : error
     }
@@ -290,14 +319,14 @@ export class IndySdkPoolService {
 
   private async getDidFromPool(did: string, pool: IndySdkPool): Promise<PublicDidRequest> {
     try {
-      this.logger.trace(`Get public did '${did}' from ledger '${pool.id}'`)
+      this.logger.trace(`Get public did '${did}' from ledger '${pool.didIndyNamespace}'`)
       const request = await this.indySdk.buildGetNymRequest(null, did)
 
-      this.logger.trace(`Submitting get did request for did '${did}' to ledger '${pool.id}'`)
+      this.logger.trace(`Submitting get did request for did '${did}' to ledger '${pool.didIndyNamespace}'`)
       const response = await pool.submitReadRequest(request)
 
       const result = await this.indySdk.parseGetNymResponse(response)
-      this.logger.trace(`Retrieved did '${did}' from ledger '${pool.id}'`, result)
+      this.logger.trace(`Retrieved did '${did}' from ledger '${pool.didIndyNamespace}'`, result)
 
       return {
         did: result,
@@ -305,12 +334,12 @@ export class IndySdkPoolService {
         response,
       }
     } catch (error) {
-      this.logger.trace(`Error retrieving did '${did}' from ledger '${pool.id}'`, {
+      this.logger.trace(`Error retrieving did '${did}' from ledger '${pool.didIndyNamespace}'`, {
         error,
         did,
       })
       if (isIndyError(error, 'LedgerNotFound')) {
-        throw new IndySdkPoolNotFoundError(`Did '${did}' not found on ledger ${pool.id}`)
+        throw new IndySdkPoolNotFoundError(`Did '${did}' not found on ledger ${pool.didIndyNamespace}`)
       } else {
         throw isIndyError(error) ? new IndySdkError(error) : error
       }

@@ -19,20 +19,22 @@ export interface AnonCredsCredentialDefinition {
 
 export interface AnonCredsRevocationRegistryDefinition {
   issuerId: string
-  type: 'CL_ACCUM'
+  revocDefType: 'CL_ACCUM'
   credDefId: string
   tag: string
-  publicKeys: {
-    accumKey: {
-      z: string
+  value: {
+    publicKeys: {
+      accumKey: {
+        z: string
+      }
     }
+    maxCredNum: number
+    tailsLocation: string
+    tailsHash: string
   }
-  maxCredNum: number
-  tailsLocation: string
-  tailsHash: string
 }
 
-export interface AnonCredsRevocationList {
+export interface AnonCredsRevocationStatusList {
   issuerId: string
   revRegId: string
   revocationList: number[]

@@ -1,7 +1,7 @@
 import type {
   AnonCredsCredentialInfo,
   AnonCredsCredentialRequestMetadata,
-  AnonCredsRequestedCredentials,
+  AnonCredsSelectedCredentials,
 } from '../models'
 import type {
   AnonCredsCredential,
@@ -12,7 +12,7 @@ import type {
 } from '../models/exchange'
 import type {
   AnonCredsCredentialDefinition,
-  AnonCredsRevocationList,
+  AnonCredsRevocationStatusList,
   AnonCredsRevocationRegistryDefinition,
   AnonCredsSchema,
 } from '../models/registry'
@@ -24,7 +24,7 @@ export interface AnonCredsAttributeInfo {
 
 export interface CreateProofOptions {
   proofRequest: AnonCredsProofRequest
-  requestedCredentials: AnonCredsRequestedCredentials
+  selectedCredentials: AnonCredsSelectedCredentials
   schemas: {
     [schemaId: string]: AnonCredsSchema
   }
@@ -36,8 +36,8 @@ export interface CreateProofOptions {
       // tails file MUST already be downloaded on a higher level and stored
       tailsFilePath: string
       definition: AnonCredsRevocationRegistryDefinition
-      revocationLists: {
-        [timestamp: string]: AnonCredsRevocationList
+      revocationStatusLists: {
+        [timestamp: number]: AnonCredsRevocationStatusList
       }
     }
   }
@@ -47,6 +47,7 @@ export interface StoreCredentialOptions {
   credentialRequestMetadata: AnonCredsCredentialRequestMetadata
   credential: AnonCredsCredential
   credentialDefinition: AnonCredsCredentialDefinition
+  schema: AnonCredsSchema
   credentialDefinitionId: string
   credentialId?: string
   revocationRegistry?: {
@@ -81,9 +82,19 @@ export type GetCredentialsForProofRequestReturn = Array<{
 export interface CreateCredentialRequestOptions {
   credentialOffer: AnonCredsCredentialOffer
   credentialDefinition: AnonCredsCredentialDefinition
+  linkSecretId?: string
 }
 
 export interface CreateCredentialRequestReturn {
   credentialRequest: AnonCredsCredentialRequest
   credentialRequestMetadata: AnonCredsCredentialRequestMetadata
+}
+
+export interface CreateLinkSecretOptions {
+  linkSecretId?: string
+}
+
+export interface CreateLinkSecretReturn {
+  linkSecretId: string
+  linkSecretValue?: string
 }

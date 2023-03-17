@@ -1,8 +1,8 @@
 import type {
   AnonCredsRevocationRegistryDefinition,
-  AnonCredsRevocationList,
+  AnonCredsRevocationStatusList,
   AnonCredsProofRequest,
-  AnonCredsRequestedCredentials,
+  AnonCredsSelectedCredentials,
   AnonCredsCredentialInfo,
   AnonCredsNonRevokedInterval,
 } from '@aries-framework/anoncreds'
@@ -44,14 +44,14 @@ export class IndySdkRevocationService {
   public async createRevocationState(
     agentContext: AgentContext,
     proofRequest: AnonCredsProofRequest,
-    requestedCredentials: AnonCredsRequestedCredentials,
+    selectedCredentials: AnonCredsSelectedCredentials,
     revocationRegistries: {
       [revocationRegistryDefinitionId: string]: {
         // Tails is already downloaded
         tailsFilePath: string
         definition: AnonCredsRevocationRegistryDefinition
-        revocationLists: {
-          [timestamp: string]: AnonCredsRevocationList
+        revocationStatusLists: {
+          [timestamp: string]: AnonCredsRevocationStatusList
         }
       }
     }
@@ -59,7 +59,7 @@ export class IndySdkRevocationService {
     try {
       agentContext.config.logger.debug(`Creating Revocation State(s) for proof request`, {
         proofRequest,
-        requestedCredentials,
+        selectedCredentials,
       })
       const indyRevocationStates: RevStates = {}
       const referentCredentials: Array<{
@@ -70,18 +70,18 @@ export class IndySdkRevocationService {
       }> = []
 
       //Retrieve information for referents and push to single array
-      for (const [referent, requestedCredential] of Object.entries(requestedCredentials.requestedAttributes ?? {})) {
+      for (const [referent, selectedCredential] of Object.entries(selectedCredentials.attributes ?? {})) {
         referentCredentials.push({
           referent,
-          credentialInfo: requestedCredential.credentialInfo,
+          credentialInfo: selectedCredential.credentialInfo,
           type: RequestReferentType.Attribute,
           referentRevocationInterval: proofRequest.requested_attributes[referent].non_revoked,
         })
       }
-      for (const [referent, requestedCredential] of Object.entries(requestedCredentials.requestedPredicates ?? {})) {
+      for (const [referent, selectedCredential] of Object.entries(selectedCredentials.predicates ?? {})) {
         referentCredentials.push({
           referent,
-          credentialInfo: requestedCredential.credentialInfo,
+          credentialInfo: selectedCredential.credentialInfo,
           type: RequestReferentType.Predicate,
           referentRevocationInterval: proofRequest.requested_predicates[referent].non_revoked,
         })
@@ -106,18 +106,18 @@ export class IndySdkRevocationService {
 
           this.assertRevocationInterval(requestRevocationInterval)
 
-          const { definition, revocationLists, tailsFilePath } = revocationRegistries[revocationRegistryId]
-          // NOTE: we assume that the revocationLists have been added based on timestamps of the `to` query. On a higher level it means we'll find the
-          // most accurate revocation list for a given timestamp. It doesn't have to be that the revocationList is from the `to` timestamp however.
-          const revocationList = revocationLists[requestRevocationInterval.to]
+          const { definition, revocationStatusLists, tailsFilePath } = revocationRegistries[revocationRegistryId]
+          // NOTE: we assume that the revocationStatusLists have been added based on timestamps of the `to` query. On a higher level it means we'll find the
+          // most accurate revocation list for a given timestamp. It doesn't have to be that the revocationStatusList is from the `to` timestamp however.
+          const revocationStatusList = revocationStatusLists[requestRevocationInterval.to]
 
           const tails = await createTailsReader(agentContext, tailsFilePath)
 
           const revocationState = await this.indySdk.createRevocationState(
             tails,
             indySdkRevocationRegistryDefinitionFromAnonCreds(revocationRegistryId, definition),
-            indySdkRevocationDeltaFromAnonCreds(revocationList),
-            revocationList.timestamp,
+            indySdkRevocationDeltaFromAnonCreds(revocationStatusList),
+            revocationStatusList.timestamp,
             credentialRevocationId
           )
           const timestamp = revocationState.timestamp
@@ -138,7 +138,7 @@ export class IndySdkRevocationService {
       agentContext.config.logger.error(`Error creating Indy Revocation State for Proof Request`, {
         error,
         proofRequest,
-        requestedCredentials,
+        selectedCredentials,
       })
 
       throw isIndyError(error) ? new IndySdkError(error) : error

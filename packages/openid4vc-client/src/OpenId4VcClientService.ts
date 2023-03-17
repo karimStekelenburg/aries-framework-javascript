@@ -5,7 +5,7 @@ import {
   AriesFrameworkError,
   Buffer,
   DidsApi,
-  getKeyDidMappingByVerificationMethod,
+  getKeyFromVerificationMethod,
   inject,
   injectable,
   InjectionSymbols,
@@ -111,7 +111,6 @@ export class OpenId4VcClientService {
 
       // TODO: which purposes are allowed?
       const verificationMethod = didResult.didDocument.dereferenceKey(kid, ['authentication'])
-      const { getKeyFromVerificationMethod } = getKeyDidMappingByVerificationMethod(verificationMethod)
       const key = getKeyFromVerificationMethod(verificationMethod)
 
       const payload = JsonEncoder.toBuffer(jwt.payload)

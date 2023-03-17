@@ -1,11 +1,12 @@
 import type { AnonCredsVerifierService, VerifyProofOptions } from '@aries-framework/anoncreds'
-import type { CredentialDefs, Schemas, RevocRegDefs, RevRegs, IndyProofRequest } from 'indy-sdk'
+import type { AgentContext } from '@aries-framework/core'
+import type { CredentialDefs, Schemas, RevocRegDefs, RevRegs, IndyProofRequest, IndyProof } from 'indy-sdk'
 
-import { inject } from '@aries-framework/core'
+import { inject, injectable } from '@aries-framework/core'
 
 import { IndySdkError, isIndyError } from '../../error'
 import { IndySdk, IndySdkSymbol } from '../../types'
-import { getIndySeqNoFromUnqualifiedCredentialDefinitionId } from '../utils/identifiers'
+import { parseCredentialDefinitionId } from '../utils/identifiers'
 import {
   indySdkCredentialDefinitionFromAnonCreds,
   indySdkRevocationRegistryDefinitionFromAnonCreds,
@@ -13,6 +14,7 @@ import {
   indySdkSchemaFromAnonCreds,
 } from '../utils/transform'
 
+@injectable()
 export class IndySdkVerifierService implements AnonCredsVerifierService {
   private indySdk: IndySdk
 
@@ -20,7 +22,7 @@ export class IndySdkVerifierService implements AnonCredsVerifierService {
     this.indySdk = indySdk
   }
 
-  public async verifyProof(options: VerifyProofOptions): Promise<boolean> {
+  public async verifyProof(agentContext: AgentContext, options: VerifyProofOptions): Promise<boolean> {
     try {
       // The AnonCredsSchema doesn't contain the seqNo anymore. However, the indy credential definition id
       // does contain the seqNo, so we can extract it from the credential definition id.
@@ -37,8 +39,8 @@ export class IndySdkVerifierService implements AnonCredsVerifierService {
         )
 
         // Get the seqNo for the schemas so we can use it when transforming the schemas
-        const schemaSeqNo = getIndySeqNoFromUnqualifiedCredentialDefinitionId(credentialDefinitionId)
-        seqNoMap[credentialDefinition.schemaId] = schemaSeqNo
+        const { schemaSeqNo } = parseCredentialDefinitionId(credentialDefinitionId)
+        seqNoMap[credentialDefinition.schemaId] = Number(schemaSeqNo)
       }
 
       // Convert AnonCreds schemas to Indy schemas
@@ -52,8 +54,8 @@ export class IndySdkVerifierService implements AnonCredsVerifierService {
       const indyRevocationDefinitions: RevocRegDefs = {}
       const indyRevocationRegistries: RevRegs = {}
 
-      for (const revocationRegistryDefinitionId in options.revocationStates) {
-        const { definition, revocationLists } = options.revocationStates[revocationRegistryDefinitionId]
+      for (const revocationRegistryDefinitionId in options.revocationRegistries) {
+        const { definition, revocationStatusLists } = options.revocationRegistries[revocationRegistryDefinitionId]
         indyRevocationDefinitions[revocationRegistryDefinitionId] = indySdkRevocationRegistryDefinitionFromAnonCreds(
           revocationRegistryDefinitionId,
           definition
@@ -64,16 +66,16 @@ export class IndySdkVerifierService implements AnonCredsVerifierService {
 
         // Also transform the revocation lists for the specified timestamps into the revocation registry
         // format Indy expects
-        for (const timestamp in revocationLists) {
-          const revocationList = revocationLists[timestamp]
+        for (const timestamp in revocationStatusLists) {
+          const revocationStatusList = revocationStatusLists[timestamp]
           indyRevocationRegistries[revocationRegistryDefinitionId][timestamp] =
-            indySdkRevocationRegistryFromAnonCreds(revocationList)
+            indySdkRevocationRegistryFromAnonCreds(revocationStatusList)
         }
       }
 
       return await this.indySdk.verifierVerifyProof(
         options.proofRequest as IndyProofRequest,
-        options.proof,
+        options.proof as IndyProof,
         indySchemas,
         indyCredentialDefinitions,
         indyRevocationDefinitions,

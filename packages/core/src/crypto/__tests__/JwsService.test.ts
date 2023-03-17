@@ -1,10 +1,11 @@
 import type { AgentContext } from '../../agent'
-import type { Wallet } from '@aries-framework/core'
+import type { Key, Wallet } from '@aries-framework/core'
 
+import { IndySdkWallet } from '../../../../indy-sdk/src'
+import { indySdk } from '../../../../indy-sdk/tests/setupIndySdkModule'
 import { getAgentConfig, getAgentContext } from '../../../tests/helpers'
 import { DidKey } from '../../modules/dids'
-import { Buffer, JsonEncoder } from '../../utils'
-import { IndyWallet } from '../../wallet/IndyWallet'
+import { Buffer, JsonEncoder, TypedArrayEncoder } from '../../utils'
 import { JwsService } from '../JwsService'
 import { KeyType } from '../KeyType'
 import { SigningProviderRegistry } from '../signing-provider'
@@ -16,17 +17,26 @@ describe('JwsService', () => {
   let wallet: Wallet
   let agentContext: AgentContext
   let jwsService: JwsService
-
+  let didJwsz6MkfKey: Key
+  let didJwsz6MkvKey: Key
   beforeAll(async () => {
     const config = getAgentConfig('JwsService')
-    wallet = new IndyWallet(config.agentDependencies, config.logger, new SigningProviderRegistry([]))
+    // TODO: update to InMemoryWallet
+    wallet = new IndySdkWallet(indySdk, config.logger, new SigningProviderRegistry([]))
     agentContext = getAgentContext({
       wallet,
     })
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    await wallet.createAndOpen(config.walletConfig!)
+    await wallet.createAndOpen(config.walletConfig)
 
     jwsService = new JwsService()
+    didJwsz6MkfKey = await wallet.createKey({
+      privateKey: TypedArrayEncoder.fromString(didJwsz6Mkf.SEED),
+      keyType: KeyType.Ed25519,
+    })
+    didJwsz6MkvKey = await wallet.createKey({
+      privateKey: TypedArrayEncoder.fromString(didJwsz6Mkv.SEED),
+      keyType: KeyType.Ed25519,
+    })
   })
 
   afterAll(async () => {
@@ -35,18 +45,16 @@ describe('JwsService', () => {
 
   describe('createJws', () => {
     it('creates a jws for the payload with the key associated with the verkey', async () => {
-      const key = await wallet.createKey({ seed: didJwsz6Mkf.SEED, keyType: KeyType.Ed25519 })
-
       const payload = JsonEncoder.toBuffer(didJwsz6Mkf.DATA_JSON)
-      const kid = new DidKey(key).did
+      const kid = new DidKey(didJwsz6MkfKey).did
 
       const jws = await jwsService.createJws(agentContext, {
         payload,
-        key,
+        key: didJwsz6MkfKey,
         header: { kid },
         protectedHeaderOptions: {
           alg: 'EdDSA',
-          jwk: key.toJwk(),
+          jwk: didJwsz6MkfKey.toJwk(),
         },
       })
 
@@ -64,7 +72,7 @@ describe('JwsService', () => {
       })
 
       expect(isValid).toBe(true)
-      expect(signerKeys).toEqual([didJwsz6Mkf.VERKEY])
+      expect(signerKeys).toEqual([didJwsz6MkfKey])
     })
 
     it('returns all verkeys that signed the jws', async () => {
@@ -76,7 +84,7 @@ describe('JwsService', () => {
       })
 
       expect(isValid).toBe(true)
-      expect(signerKeys).toEqual([didJwsz6Mkf.VERKEY, didJwsz6Mkv.VERKEY])
+      expect(signerKeys).toEqual([didJwsz6MkfKey, didJwsz6MkvKey])
     })
 
     it('returns false if the jws signature does not match the payload', async () => {

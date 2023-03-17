@@ -5,20 +5,27 @@ import { Subject } from 'rxjs'
 
 import { SubjectInboundTransport } from '../../../../../../tests/transport/SubjectInboundTransport'
 import { SubjectOutboundTransport } from '../../../../../../tests/transport/SubjectOutboundTransport'
+import { getIndySdkModules } from '../../../../../indy-sdk/tests/setupIndySdkModule'
 import { getAgentOptions, waitForBasicMessage, waitForTrustPingReceivedEvent } from '../../../../tests/helpers'
 import { Agent } from '../../../agent/Agent'
 import { HandshakeProtocol } from '../../connections'
 import { MediatorPickupStrategy } from '../MediatorPickupStrategy'
 
-const recipientOptions = getAgentOptions('Mediation: Recipient Pickup', {
-  autoAcceptConnections: true,
-  indyLedgers: [],
-})
-const mediatorOptions = getAgentOptions('Mediation: Mediator Pickup', {
-  autoAcceptConnections: true,
-  endpoints: ['wss://mediator'],
-  indyLedgers: [],
-})
+const recipientOptions = getAgentOptions(
+  'Mediation: Recipient Pickup',
+  {
+    autoAcceptConnections: true,
+  },
+  getIndySdkModules()
+)
+const mediatorOptions = getAgentOptions(
+  'Mediation: Mediator Pickup',
+  {
+    autoAcceptConnections: true,
+    endpoints: ['wss://mediator'],
+  },
+  getIndySdkModules()
+)
 
 describe('E2E Pick Up protocol', () => {
   let recipientAgent: Agent
@@ -70,6 +77,13 @@ describe('E2E Pick Up protocol', () => {
     let [mediatorRecipientConnection] = await mediatorAgent.connections.findAllByOutOfBandId(mediatorOutOfBandRecord.id)
 
     mediatorRecipientConnection = await mediatorAgent.connections.returnWhenIsConnected(mediatorRecipientConnection!.id)
+
+    // Now they are connected, reinitialize recipient agent in order to lose the session (as with SubjectTransport it remains open)
+    await recipientAgent.shutdown()
+
+    recipientAgent = new Agent(recipientOptions)
+    recipientAgent.registerOutboundTransport(new SubjectOutboundTransport(subjectMap))
+    await recipientAgent.initialize()
 
     const message = 'hello pickup V1'
     await mediatorAgent.basicMessages.sendMessage(mediatorRecipientConnection.id, message)

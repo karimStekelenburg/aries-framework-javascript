@@ -18,7 +18,7 @@ import { AriesFrameworkError } from '../../error'
 import { injectable } from '../../plugins'
 import { JsonTransformer } from '../../utils'
 import { VerificationMethod } from '../dids'
-import { getKeyDidMappingByVerificationMethod } from '../dids/domain/key-type'
+import { getKeyFromVerificationMethod } from '../dids/domain/key-type'
 
 import { SignatureSuiteRegistry } from './SignatureSuiteRegistry'
 import { W3cVcModuleConfig } from './W3cVcModuleConfig'
@@ -297,9 +297,8 @@ export class W3cCredentialService {
     const verificationMethodObject = await documentLoader(verificationMethod)
     const verificationMethodClass = JsonTransformer.fromJSON(verificationMethodObject.document, VerificationMethod)
 
-    const key = getKeyDidMappingByVerificationMethod(verificationMethodClass)
-
-    return key.getKeyFromVerificationMethod(verificationMethodClass)
+    const key = getKeyFromVerificationMethod(verificationMethodClass)
+    return key
   }
 
   /**
@@ -344,7 +343,7 @@ export class W3cCredentialService {
     return await this.w3cCredentialRepository.getById(agentContext, id)
   }
 
-  public async findCredentialRecordsByQuery(
+  public async findCredentialsByQuery(
     agentContext: AgentContext,
     query: Query<W3cCredentialRecord>
   ): Promise<W3cVerifiableCredential[]> {
@@ -366,6 +365,15 @@ export class W3cCredentialService {
   ): Promise<W3cVerifiableCredential | undefined> {
     const result = await this.w3cCredentialRepository.findSingleByQuery(agentContext, query)
     return result?.credential
+  }
+  public getProofTypeByVerificationMethodType(verificationMethodType: string): string {
+    const suite = this.signatureSuiteRegistry.getByVerificationMethodType(verificationMethodType)
+
+    if (!suite) {
+      throw new AriesFrameworkError(`No suite found for verification method type ${verificationMethodType}}`)
+    }
+
+    return suite.proofType
   }
 
   private getSignatureSuitesForCredential(agentContext: AgentContext, credential: W3cVerifiableCredential) {

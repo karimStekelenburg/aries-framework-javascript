@@ -34,7 +34,7 @@ export class MessageReceiver {
   private connectionService: ConnectionService
   private messageHandlerRegistry: MessageHandlerRegistry
   private agentContextProvider: AgentContextProvider
-  public readonly inboundTransports: InboundTransport[] = []
+  private _inboundTransports: InboundTransport[] = []
 
   public constructor(
     envelopeService: EnvelopeService,
@@ -54,10 +54,20 @@ export class MessageReceiver {
     this.messageHandlerRegistry = messageHandlerRegistry
     this.agentContextProvider = agentContextProvider
     this.logger = logger
+    this._inboundTransports = []
+  }
+
+  public get inboundTransports() {
+    return this._inboundTransports
   }
 
   public registerInboundTransport(inboundTransport: InboundTransport) {
-    this.inboundTransports.push(inboundTransport)
+    this._inboundTransports.push(inboundTransport)
+  }
+
+  public async unregisterInboundTransport(inboundTransport: InboundTransport) {
+    this._inboundTransports = this._inboundTransports.filter((transport) => transport !== inboundTransport)
+    await inboundTransport.stop()
   }
 
   /**
@@ -147,7 +157,7 @@ export class MessageReceiver {
       // We allow unready connections to be attached to the session as we want to be able to
       // use return routing to make connections. This is especially useful for creating connections
       // with mediators when you don't have a public endpoint yet.
-      session.connection = connection ?? undefined
+      session.connectionId = connection?.id
       messageContext.sessionId = session.id
       this.transportService.saveSession(session)
     } else if (session) {
@@ -278,7 +288,7 @@ export class MessageReceiver {
       },
     })
     problemReportMessage.setThread({
-      threadId: plaintextMessage['@id'],
+      parentThreadId: plaintextMessage['@id'],
     })
     const outboundMessageContext = new OutboundMessageContext(problemReportMessage, { agentContext, connection })
     if (outboundMessageContext) {

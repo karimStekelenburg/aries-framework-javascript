@@ -1,36 +1,32 @@
 import type { IndyEndpointAttrib } from './didSovUtil'
+import type { IndySdkPool } from '../ledger'
+import type { IndySdk } from '../types'
 import type { DidResolutionResult, ParsedDid, DidResolver, AgentContext } from '@aries-framework/core'
-
-import { inject, injectable } from '@aries-framework/core'
 
 import { isIndyError, IndySdkError } from '../error'
 import { IndySdkPoolService } from '../ledger/IndySdkPoolService'
-import { IndySdkSymbol, IndySdk } from '../types'
+import { IndySdkSymbol } from '../types'
 
 import { addServicesFromEndpointsAttrib, sovDidDocumentFromDid } from './didSovUtil'
 
-@injectable()
 export class IndySdkSovDidResolver implements DidResolver {
-  private indySdk: IndySdk
-  private indySdkPoolService: IndySdkPoolService
-
-  public constructor(indyPoolService: IndySdkPoolService, @inject(IndySdkSymbol) indySdk: IndySdk) {
-    this.indySdk = indySdk
-    this.indySdkPoolService = indyPoolService
-  }
-
   public readonly supportedMethods = ['sov']
 
   public async resolve(agentContext: AgentContext, did: string, parsed: ParsedDid): Promise<DidResolutionResult> {
     const didDocumentMetadata = {}
 
     try {
-      const nym = await this.getPublicDid(agentContext, parsed.id)
-      const endpoints = await this.getEndpointsForDid(agentContext, parsed.id)
+      const poolService = agentContext.dependencyManager.resolve(IndySdkPoolService)
+      const { pool, nymResponse } = await poolService.getPoolForDid(agentContext, parsed.id)
+      const nym = nymResponse ?? (await this.getPublicDid(agentContext, pool, parsed.id))
+      const endpoints = await this.getEndpointsForDid(agentContext, pool, parsed.id)
 
       const keyAgreementId = `${parsed.did}#key-agreement-1`
       const builder = sovDidDocumentFromDid(parsed.did, nym.verkey)
-      addServicesFromEndpointsAttrib(builder, parsed.did, endpoints, keyAgreementId)
+
+      if (endpoints) {
+        addServicesFromEndpointsAttrib(builder, parsed.did, endpoints, keyAgreementId)
+      }
 
       return {
         didDocument: builder.build(),
@@ -49,41 +45,49 @@ export class IndySdkSovDidResolver implements DidResolver {
     }
   }
 
-  private async getPublicDid(agentContext: AgentContext, did: string) {
-    // Getting the pool for a did also retrieves the DID. We can just use that
-    const { did: didResponse } = await this.indySdkPoolService.getPoolForDid(agentContext, did)
+  private async getPublicDid(agentContext: AgentContext, pool: IndySdkPool, did: string) {
+    const indySdkPoolService = agentContext.dependencyManager.resolve(IndySdkPoolService)
+    const indySdk = agentContext.dependencyManager.resolve<IndySdk>(IndySdkSymbol)
 
-    return didResponse
+    const request = await indySdk.buildGetNymRequest(null, did)
+    const response = await indySdkPoolService.submitReadRequest(pool, request)
+
+    return await indySdk.parseGetNymResponse(response)
   }
 
-  private async getEndpointsForDid(agentContext: AgentContext, did: string) {
-    const { pool } = await this.indySdkPoolService.getPoolForDid(agentContext, did)
+  private async getEndpointsForDid(agentContext: AgentContext, pool: IndySdkPool, unqualifiedDid: string) {
+    const indySdk = agentContext.dependencyManager.resolve<IndySdk>(IndySdkSymbol)
+    const indySdkPoolService = agentContext.dependencyManager.resolve(IndySdkPoolService)
 
     try {
-      agentContext.config.logger.debug(`Get endpoints for did '${did}' from ledger '${pool.didIndyNamespace}'`)
+      agentContext.config.logger.debug(
+        `Get endpoints for did '${unqualifiedDid}' from ledger '${pool.didIndyNamespace}'`
+      )
 
-      const request = await this.indySdk.buildGetAttribRequest(null, did, 'endpoint', null, null)
+      const request = await indySdk.buildGetAttribRequest(null, unqualifiedDid, 'endpoint', null, null)
 
       agentContext.config.logger.debug(
-        `Submitting get endpoint ATTRIB request for did '${did}' to ledger '${pool.didIndyNamespace}'`
+        `Submitting get endpoint ATTRIB request for did '${unqualifiedDid}' to ledger '${pool.didIndyNamespace}'`
       )
-      const response = await this.indySdkPoolService.submitReadRequest(pool, request)
+      const response = await indySdkPoolService.submitReadRequest(pool, request)
 
-      if (!response.result.data) return {}
+      if (!response.result.data) return null
 
       const endpoints = JSON.parse(response.result.data as string)?.endpoint as IndyEndpointAttrib
       agentContext.config.logger.debug(
-        `Got endpoints '${JSON.stringify(endpoints)}' for did '${did}' from ledger '${pool.didIndyNamespace}'`,
+        `Got endpoints '${JSON.stringify(endpoints)}' for did '${unqualifiedDid}' from ledger '${
+          pool.didIndyNamespace
+        }'`,
         {
           response,
           endpoints,
         }
       )
 
-      return endpoints ?? {}
+      return endpoints ?? null
     } catch (error) {
       agentContext.config.logger.error(
-        `Error retrieving endpoints for did '${did}' from ledger '${pool.didIndyNamespace}'`,
+        `Error retrieving endpoints for did '${unqualifiedDid}' from ledger '${pool.didIndyNamespace}'`,
         {
           error,
         }

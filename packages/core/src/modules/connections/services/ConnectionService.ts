@@ -120,8 +120,8 @@ export class ConnectionService {
     })
 
     connectionRequest.setThread({
-      threadId: connectionRequest.id,
-      parentThreadId: outOfBandInvitation.id,
+      threadId: connectionRequest.threadId,
+      parentThreadId: outOfBandRecord.outOfBandInvitation.id,
     })
 
     const connectionRecord = await this.createConnection(agentContext, {
@@ -136,7 +136,7 @@ export class ConnectionService {
       outOfBandId: outOfBandRecord.id,
       invitationDid,
       imageUrl: outOfBandInvitation.imageUrl,
-      threadId: connectionRequest.id,
+      threadId: connectionRequest.threadId,
     })
 
     await this.updateState(agentContext, connectionRecord, DidExchangeState.RequestSent)
@@ -447,8 +447,8 @@ export class ConnectionService {
       previousSentMessage,
       previousReceivedMessage,
     }: {
-      previousSentMessage?: AgentMessage
-      previousReceivedMessage?: AgentMessage
+      previousSentMessage?: AgentMessage | null
+      previousReceivedMessage?: AgentMessage | null
     } = {}
   ) {
     const { connection, message } = messageContext

@@ -8,7 +8,9 @@ import type {
   RegisterCredentialDefinitionOptions,
   RegisterCredentialDefinitionReturn,
   GetRevocationRegistryDefinitionReturn,
-  GetRevocationListReturn,
+  GetRevocationStatusListReturn,
+  AnonCredsRevocationStatusList,
+  AnonCredsRevocationRegistryDefinition,
   AnonCredsSchema,
   AnonCredsCredentialDefinition,
 } from '../src'
@@ -17,6 +19,15 @@ import type { AgentContext } from '@aries-framework/core'
 import { Hasher, TypedArrayEncoder } from '@aries-framework/core'
 import BigNumber from 'bn.js'
 
+import {
+  getDidIndyCredentialDefinitionId,
+  getDidIndySchemaId,
+  getLegacyCredentialDefinitionId,
+  getLegacySchemaId,
+  parseSchemaId,
+} from '../../indy-sdk/src/anoncreds/utils/identifiers'
+import { parseIndyDid } from '../../indy-sdk/src/dids/didIndyUtil'
+
 /**
  * In memory implementation of the {@link AnonCredsRegistry} interface. Useful for testing.
  */
@@ -24,14 +35,37 @@ export class InMemoryAnonCredsRegistry implements AnonCredsRegistry {
   // Roughly match that the identifier starts with an unqualified indy did. Once the
   // anoncreds tests are not based on the indy-sdk anymore, we can use any identifier
   // we want, but the indy-sdk is picky about the identifier format.
-  public readonly supportedIdentifier = /^[a-zA-Z0-9]{21,22}/
+  public readonly supportedIdentifier = /.+/
 
-  private schemas: Record<string, AnonCredsSchema> = {}
-  private credentialDefinitions: Record<string, AnonCredsCredentialDefinition> = {}
+  private schemas: Record<string, AnonCredsSchema>
+  private credentialDefinitions: Record<string, AnonCredsCredentialDefinition>
+  private revocationRegistryDefinitions: Record<string, AnonCredsRevocationRegistryDefinition>
+  private revocationStatusLists: Record<string, Record<string, AnonCredsRevocationStatusList>>
+
+  public constructor({
+    existingSchemas = {},
+    existingCredentialDefinitions = {},
+    existingRevocationRegistryDefinitions = {},
+    existingRevocationStatusLists = {},
+  }: {
+    existingSchemas?: Record<string, AnonCredsSchema>
+    existingCredentialDefinitions?: Record<string, AnonCredsCredentialDefinition>
+    existingRevocationRegistryDefinitions?: Record<string, AnonCredsRevocationRegistryDefinition>
+    existingRevocationStatusLists?: Record<string, Record<string, AnonCredsRevocationStatusList>>
+  } = {}) {
+    this.schemas = existingSchemas
+    this.credentialDefinitions = existingCredentialDefinitions
+    this.revocationRegistryDefinitions = existingRevocationRegistryDefinitions
+    this.revocationStatusLists = existingRevocationStatusLists
+  }
 
   public async getSchema(agentContext: AgentContext, schemaId: string): Promise<GetSchemaReturn> {
     const schema = this.schemas[schemaId]
-    const indyLedgerSeqNo = getSeqNoFromSchemaId(schemaId)
+
+    const parsed = parseSchemaId(schemaId)
+
+    const legacySchemaId = getLegacySchemaId(parsed.namespaceIdentifier, parsed.schemaName, parsed.schemaVersion)
+    const indyLedgerSeqNo = getSeqNoFromSchemaId(legacySchemaId)
 
     if (!schema) {
       return {
@@ -40,11 +74,7 @@ export class InMemoryAnonCredsRegistry implements AnonCredsRegistry {
           message: `Schema with id ${schemaId} not found in memory registry`,
         },
         schemaId,
-        schemaMetadata: {
-          // NOTE: the seqNo is required by the indy-sdk even though not present in AnonCreds v1.
-          // For this reason we return it in the metadata.
-          indyLedgerSeqNo,
-        },
+        schemaMetadata: {},
       }
     }
 
@@ -52,7 +82,11 @@ export class InMemoryAnonCredsRegistry implements AnonCredsRegistry {
       resolutionMetadata: {},
       schema,
       schemaId,
-      schemaMetadata: {},
+      schemaMetadata: {
+        // NOTE: the seqNo is required by the indy-sdk even though not present in AnonCreds v1.
+        // For this reason we return it in the metadata.
+        indyLedgerSeqNo,
+      },
     }
   }
 
@@ -60,10 +94,22 @@ export class InMemoryAnonCredsRegistry implements AnonCredsRegistry {
     agentContext: AgentContext,
     options: RegisterSchemaOptions
   ): Promise<RegisterSchemaReturn> {
-    const schemaId = `${options.schema.issuerId}:2:${options.schema.name}:${options.schema.version}`
-    const indyLedgerSeqNo = getSeqNoFromSchemaId(schemaId)
+    const { namespaceIdentifier, namespace } = parseIndyDid(options.schema.issuerId)
+    const didIndySchemaId = getDidIndySchemaId(
+      namespace,
+      namespaceIdentifier,
+      options.schema.name,
+      options.schema.version
+    )
+    const legacySchemaId = getLegacySchemaId(namespaceIdentifier, options.schema.name, options.schema.version)
 
-    this.schemas[schemaId] = options.schema
+    const indyLedgerSeqNo = getSeqNoFromSchemaId(legacySchemaId)
+
+    this.schemas[didIndySchemaId] = options.schema
+    this.schemas[legacySchemaId] = {
+      ...options.schema,
+      issuerId: namespaceIdentifier,
+    }
 
     return {
       registrationMetadata: {},
@@ -75,7 +121,7 @@ export class InMemoryAnonCredsRegistry implements AnonCredsRegistry {
       schemaState: {
         state: 'finished',
         schema: options.schema,
-        schemaId,
+        schemaId: didIndySchemaId,
       },
     }
   }
@@ -109,10 +155,34 @@ export class InMemoryAnonCredsRegistry implements AnonCredsRegistry {
     agentContext: AgentContext,
     options: RegisterCredentialDefinitionOptions
   ): Promise<RegisterCredentialDefinitionReturn> {
-    const indyLedgerSeqNo = getSeqNoFromSchemaId(options.credentialDefinition.schemaId)
-    const credentialDefinitionId = `${options.credentialDefinition.issuerId}:3:CL:${indyLedgerSeqNo}:${options.credentialDefinition.tag}`
+    const parsedSchema = parseSchemaId(options.credentialDefinition.schemaId)
+    const legacySchemaId = getLegacySchemaId(
+      parsedSchema.namespaceIdentifier,
+      parsedSchema.schemaName,
+      parsedSchema.schemaVersion
+    )
+    const indyLedgerSeqNo = getSeqNoFromSchemaId(legacySchemaId)
 
-    this.credentialDefinitions[credentialDefinitionId] = options.credentialDefinition
+    const { namespaceIdentifier, namespace } = parseIndyDid(options.credentialDefinition.issuerId)
+
+    const didIndyCredentialDefinitionId = getDidIndyCredentialDefinitionId(
+      namespace,
+      namespaceIdentifier,
+      indyLedgerSeqNo,
+      options.credentialDefinition.tag
+    )
+    const legacyCredentialDefinitionId = getLegacyCredentialDefinitionId(
+      namespaceIdentifier,
+      indyLedgerSeqNo,
+      options.credentialDefinition.tag
+    )
+
+    this.credentialDefinitions[didIndyCredentialDefinitionId] = options.credentialDefinition
+    this.credentialDefinitions[legacyCredentialDefinitionId] = {
+      ...options.credentialDefinition,
+      issuerId: namespaceIdentifier,
+      schemaId: legacySchemaId,
+    }
 
     return {
       registrationMetadata: {},
@@ -120,24 +190,58 @@ export class InMemoryAnonCredsRegistry implements AnonCredsRegistry {
       credentialDefinitionState: {
         state: 'finished',
         credentialDefinition: options.credentialDefinition,
-        credentialDefinitionId,
+        credentialDefinitionId: didIndyCredentialDefinitionId,
       },
     }
   }
 
-  public getRevocationRegistryDefinition(
+  public async getRevocationRegistryDefinition(
     agentContext: AgentContext,
     revocationRegistryDefinitionId: string
   ): Promise<GetRevocationRegistryDefinitionReturn> {
-    throw new Error('Method not implemented.')
+    const revocationRegistryDefinition = this.revocationRegistryDefinitions[revocationRegistryDefinitionId]
+
+    if (!revocationRegistryDefinition) {
+      return {
+        resolutionMetadata: {
+          error: 'notFound',
+          message: `Revocation registry definition with id ${revocationRegistryDefinition} not found in memory registry`,
+        },
+        revocationRegistryDefinitionId,
+        revocationRegistryDefinitionMetadata: {},
+      }
+    }
+
+    return {
+      resolutionMetadata: {},
+      revocationRegistryDefinition,
+      revocationRegistryDefinitionId,
+      revocationRegistryDefinitionMetadata: {},
+    }
   }
 
-  public getRevocationList(
+  public async getRevocationStatusList(
     agentContext: AgentContext,
     revocationRegistryId: string,
     timestamp: number
-  ): Promise<GetRevocationListReturn> {
-    throw new Error('Method not implemented.')
+  ): Promise<GetRevocationStatusListReturn> {
+    const revocationStatusLists = this.revocationStatusLists[revocationRegistryId]
+
+    if (!revocationStatusLists || !revocationStatusLists[timestamp]) {
+      return {
+        resolutionMetadata: {
+          error: 'notFound',
+          message: `Revocation status list for revocation registry with id ${revocationRegistryId} not found in memory registry`,
+        },
+        revocationStatusListMetadata: {},
+      }
+    }
+
+    return {
+      resolutionMetadata: {},
+      revocationStatusList: revocationStatusLists[timestamp],
+      revocationStatusListMetadata: {},
+    }
   }
 }
 

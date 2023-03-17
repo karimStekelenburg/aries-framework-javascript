@@ -2,6 +2,20 @@
 
 This file is intended for developers working on the internals of the framework. If you're just looking how to get started with the framework, see the [docs](./docs)
 
+# Environment Setup
+
+## VSCode devContainer
+
+This project comes with a [.devcontainer](./devcontainer) to make it as easy as possible to setup your dev environment and begin contributing to this project.
+
+All the [environment variables](https://code.visualstudio.com/remote/advancedcontainers/environment-variables) noted below can be added to [devcontainer.env](./devcontainer.env) and exposed to the development docker container.
+
+When running in a container your project root directory will be `/work`. Use this to correctly path any environment variables, for example:
+
+```console
+GENESIS_TXN_PATH=/work/network/genesis/local-genesis.txn
+```
+
 ## Running tests
 
 Test are executed using jest. Some test require either the **mediator agents** or the **ledger** to be running. When running tests that require a connection to the ledger pool, you need to set the `TEST_AGENT_PUBLIC_DID_SEED` and `GENESIS_TXN_PATH` environment variables.
@@ -71,7 +85,7 @@ GENESIS_TXN_PATH=network/genesis/local-genesis.txn TEST_AGENT_PUBLIC_DID_SEED=00
 Locally, you might want to run the tests without postgres tests. You can do that by ignoring the tests:
 
 ```sh
-yarn test --testPathIgnorePatterns ./packages/core/tests/postgres.e2e.test.ts -u
+yarn test --testPathIgnorePatterns ./packages/indy-sdk/tests/postgres.e2e.test.ts -u
 ```
 
 In case you run into trouble running the tests, e.g. complaining about snapshots not being up-to-date, you can try and remove the data stored for the indy-client. On a Unix system with default setup you achieve this by running:
