@@ -877,7 +877,7 @@
   resolved "https://registry.yarnpkg.com/@hutson/parse-repository-url/-/parse-repository-url-3.0.2.tgz#98c23c950a3d9b6c8f0daed06da6c3af06981340"
   integrity sha512-H9XAx3hc0BQHY6l+IFSWHDySypcXsvsuLhgYLUGywmJ5pswRVQJUHpOsobnLYp2ZUaUlKiKDrgWWhosOwAEM8Q==
 
-"@hyperledger/anoncreds-nodejs@^0.1.0-dev.9":
+"@hyperledger/anoncreds-nodejs@^0.1.0-dev.10":
   version "0.1.0-dev.10"
   resolved "https://registry.yarnpkg.com/@hyperledger/anoncreds-nodejs/-/anoncreds-nodejs-0.1.0-dev.10.tgz#80c093ecb08a277fb494399b64aad1b900c3103f"
   integrity sha512-ju5mJPwuyebAPziuf+eUOwxEws02G2FHEp/qG3GV3kxtlx7THW7HVB7dMSNqhRVKCsbcNnZtWJB1UiPvWqboUg==
@@ -890,7 +890,7 @@
     ref-napi "3.0.3"
     ref-struct-di "1.1.1"
 
-"@hyperledger/anoncreds-shared@0.1.0-dev.10", "@hyperledger/anoncreds-shared@^0.1.0-dev.9":
+"@hyperledger/anoncreds-shared@0.1.0-dev.10", "@hyperledger/anoncreds-shared@^0.1.0-dev.10":
   version "0.1.0-dev.10"
   resolved "https://registry.yarnpkg.com/@hyperledger/anoncreds-shared/-/anoncreds-shared-0.1.0-dev.10.tgz#9d67f64e98ff41971644c95b03dabafd741df4df"
   integrity sha512-POvcwQrUcPrwoZehQa38pN1dnjyeUlrQ6VlksbBRS8SUHJuyixZsD+d3XoumqaNfl9Z1DCjfuOgEiPlec01gXQ==
